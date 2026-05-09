@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>勤怠管理システム</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0f172a; color: #f1f5f9; font-family: sans-serif; min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const STORE_LOCATION = { lat: 35.6518114, lng: 139.6692699 };
+const ALLOWED_RADIUS_KM = 2;
+const SKIP_LOCATION_CHECK = true;
+const GAS_URL = "https://script.google.com/macros/s/AKfycbyCoelqYHRe4iLV9LJJ4aIVgwiCeA8p2LbLWH5lSTnFWQlLadbuudgAa9bmqEHpVebJ/exec";
+const STAFF_LIST = [
+  { id: "s01", name: "さとうかえで" },
+  { id: "s02", name: "かたぎりみゆう" },
+  { id: "s03", name: "すずきひとみ" },
+  { id: "s04", name: "ひがあいら" },
+  { id: "s05", name: "いちむらてるみ" },
+  { id: "s06", name: "はしもとゆうへい" },
+  { id: "s07", name: "ながたゆき" },
+  { id: "s08", name: "aaa" },
+  { id: "s09", name: "bbb" },
+  { id: "s10", name: "ccc" },
+];
+const ADMIN_PASS = "admin1234";
+
+function haversineKm(lat1,lng1,lat2,lng2){const R=6371;const dLat=(lat2-lat1)*Math.PI/180;const dLng=(lng2-lng1)*Math.PI/180;const a=Math.sin(dLat/2)**2+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLng/2)**2;return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));}
+function formatTime(v){if(!v||v==="")return"---";if(typeof v==="string"&&v.includes(":")&&v.length<=5)return v;return new Date(v).toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"});}
+function calcWorkMinutes(inT,outT){if(!inT||!outT||inT===""|outT==="")return null;const toMin=v=>{if(typeof v==="string"&&v.includes(":")&&v.length<=5){const[h,m]=v.split(":").map(Number);return h*60+m;}return new Date(v).getHours()*60+new Date(v).getMinutes();};return Math.max(0,toMin(outT)-toMin(inT)-60);}
+function fmtMin(min){if(min==null)return"---";return`${Math.floor(min/60)}時間${String(min%60).padStart(2,"0")}分`;}
+function todayStr(){const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
+async function gasPost(data){await fetch(GAS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});}
+async function gasGet(){const res=await fetch(GAS_URL+"?t="+Date.now());return await res.json();}
+
+const C={bg:"#0f172a",sur:"#1e293b",bor:"#334155",acc:"#38bdf8",gr:"#4ade80",re:"#f87171",ye:"#fbbf24",tx:"#f1f5f9",mu:"#94a3b8"};
+const S={
+  root:{minHeight:"100vh",background:C.bg,color:C.tx,fontFamily:"sans-serif"},
+  header:{background:C.sur,borderBottom:`1px solid ${C.bor}`,padding:"12px 16px"},
+  logo:{fontWeight:700,fontSize:18,color:C.acc,marginBottom:8},
+  tabs:{display:"flex",gap:8},
+  tab:{padding:"6px 14px",borderRadius:8,border:`1px solid ${C.bor}`,background:"transparent",color:C.mu,cursor:"pointer",fontSize:14},
+  tabOn:{padding:"6px 14px",borderRadius:8,border:`1px solid ${C.acc}`,background:C.acc+"22",color:C.acc,cursor:"pointer",fontSize:14,fontWeight:700},
+  main:{maxWidth:900,margin:"0 auto",padding:"24px 16px"},
+  card:{background:C.sur,borderRadius:16,padding:24,border:`1px solid ${C.bor}`},
+  cardTitle:{fontSize:20,fontWeight:700,marginBottom:8},
+  label:{display:"block",fontSize:13,color:C.mu,marginBottom:4,marginTop:12},
+  sel:{width:"100%",padding:"10px 12px",borderRadius:8,border:`1px solid ${C.bor}`,background:C.bg,color:C.tx,fontSize:15},
+  inp:{width:"100%",padding:"10px 12px",borderRadius:8,border:`1px solid ${C.bor}`,background:C.bg,color:C.tx,fontSize:15},
+  ta:{width:"100%",padding:"10px 12px",borderRadius:8,border:`1px solid ${C.bor}`,background:C.bg,color:C.tx,fontSize:14,resize:"vertical",marginTop:4},
+  sBox:{background:C.bg,borderRadius:10,padding:16,marginTop:16,border:`1px solid ${C.bor}`},
+  sRow:{display:"flex",justifyContent:"space-between",padding:"6px 0"},
+  msgOk:{marginTop:12,padding:"10px 14px",borderRadius:8,background:C.gr+"22",color:C.gr,fontSize:14},
+  msgNg:{marginTop:12,padding:"10px 14px",borderRadius:8,background:C.re+"22",color:C.re,fontSize:14},
+  msgInfo:{marginTop:12,padding:"10px 14px",borderRadius:8,background:C.ye+"22",color:C.ye,fontSize:14},
+  btnRow:{display:"flex",gap:12,marginTop:16,flexWrap:"wrap"},
+  btnIn:{flex:1,padding:"14px 24px",borderRadius:10,border:"none",background:C.gr,color:"#0f172a",fontWeight:700,fontSize:16,cursor:"pointer",minWidth:120},
+  btnOut:{flex:1,padding:"14px 24px",borderRadius:10,border:"none",background:C.re,color:"#fff",fontWeight:700,fontSize:16,cursor:"pointer",minWidth:120},
+  btnSave:{marginTop:8,padding:"10px 20px",borderRadius:8,border:"none",background:C.acc,color:"#0f172a",fontWeight:700,fontSize:14,cursor:"pointer"},
+  btnGray:{padding:"8px 16px",borderRadius:8,border:`1px solid ${C.bor}`,background:"transparent",color:C.mu,cursor:"pointer",fontSize:14},
+  btnExp:{padding:"10px 20px",borderRadius:8,border:"none",background:C.ye,color:"#0f172a",fontWeight:700,fontSize:14,cursor:"pointer"},
+  badge:{display:"inline-flex",alignItems:"center",padding:"6px 16px",borderRadius:20,background:C.gr+"22",color:C.gr,fontSize:14},
+  cBox:{marginTop:16,padding:16,borderRadius:10,border:`1px solid ${C.acc}44`,background:C.acc+"11"},
+  fRow:{display:"flex",gap:16,flexWrap:"wrap",alignItems:"flex-end",marginBottom:20},
+  secTitle:{fontSize:16,fontWeight:700,color:C.acc,marginTop:24,marginBottom:8,borderBottom:`1px solid ${C.bor}`,paddingBottom:6},
+  tw:{overflowX:"auto"},
+  tbl:{width:"100%",borderCollapse:"collapse",fontSize:13,minWidth:500},
+  th:{padding:"8px 12px",background:C.bg,color:C.mu,textAlign:"left",borderBottom:`1px solid ${C.bor}`,whiteSpace:"nowrap"},
+  tr:{borderBottom:`1px solid ${C.bor}22`},
+  trWe:{borderBottom:`1px solid ${C.bor}22`,background:"#1a2035"},
+  td:{padding:"7px 12px",color:C.tx,verticalAlign:"middle"},
+  ec:{cursor:"pointer",borderBottom:`1px dashed ${C.bor}`,display:"inline-block"},
+};
+
+function App(){
+  const [view,setView]=React.useState("staff");
+  const [authed,setAuthed]=React.useState(false);
+  return(
+    <div style={S.root}>
+      <header style={S.header}>
+        <div style={S.logo}>⏱ 勤怠管理システム</div>
+        <div style={S.tabs}>
+          <button style={view==="staff"?S.tabOn:S.tab} onClick={()=>setView("staff")}>📱 スタッフ打刻</button>
+          <button style={view==="admin"?S.tabOn:S.tab} onClick={()=>setView("admin")}>🗂 管理者画面</button>
+        </div>
+      </header>
+      <main style={S.main}>
+        {view==="staff"?<StaffView/>:<AdminView authed={authed} setAuthed={setAuthed}/>}
+      </main>
+    </div>
+  );
+}
+
+function StaffView(){
+  const [id,setId]=React.useState("");
+  const [locMsg,setLocMsg]=React.useState("");
+  const [locOk,setLocOk]=React.useState(null);
+  const [msg,setMsg]=React.useState("");
+  const [comment,setComment]=React.useState("");
+  const [showC,setShowC]=React.useState(false);
+  const [todayRec,setTodayRec]=React.useState(null);
+  const [loading,setLoading]=React.useState(false);
+  const today=todayStr();
+
+  React.useEffect(()=>{
+    setLocMsg("");setMsg("");setLocOk(null);setComment("");setShowC(false);setTodayRec(null);
+    if(!id)return;
+    setLoading(true);
+    gasGet().then(rows=>{
+      const rec=rows.find(r=>String(r.staffId).trim()===String(id).trim()&&String(r.date).trim()===today);
+      setTodayRec(rec||null);
+      setComment(rec?.comment||"");
+    }).catch(()=>{}).finally(()=>setLoading(false));
+  },[id]);
+
+  function checkLoc(onOk){
+    if(SKIP_LOCATION_CHECK){setLocMsg("✅ 打刻OK");setLocOk(true);onOk();return;}
+    setLocMsg("📍 位置情報を確認中...");
+    if(!navigator.geolocation){setLocMsg("❌ 位置情報未対応");return;}
+    navigator.geolocation.getCurrentPosition(pos=>{
+      const km=haversineKm(pos.coords.latitude,pos.coords.longitude,STORE_LOCATION.lat,STORE_LOCATION.lng);
+      if(km<=ALLOWED_RADIUS_KM){setLocMsg(`✅ 店舗から${km.toFixed(2)}km — OK`);setLocOk(true);onOk();}
+      else{setLocMsg(`❌ 店舗から${km.toFixed(2)}km — エリア外`);setLocOk(false);}
+    },()=>{setLocMsg("❌ 位置情報取得失敗");setLocOk(false);},{timeout:10000});
+  }
+
+  async function doIn(){
+    checkLoc(async()=>{
+      setLoading(true);
+      const staff=STAFF_LIST.find(s=>s.id===id);
+      const now=new Date().toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"});
+      const data={staffId:id,staffName:staff.name,date:today,inTime:now,outTime:"",comment:""};
+      await gasPost(data);
+      setTodayRec(data);
+      setMsg("✅ 出勤打刻完了！");
+      setLoading(false);
+    });
+  }
+
+  async function doOut(){
+    checkLoc(async()=>{
+      setLoading(true);
+      const staff=STAFF_LIST.find(s=>s.id===id);
+      const now=new Date().toLocaleTimeString("ja-JP",{hour:"2-digit",minute:"2-digit"});
+      const data={staffId:id,staffName:staff.name,date:today,inTime:todayRec?.inTime||"",outTime:now,comment:comment||""};
+      await gasPost(data);
+      setTodayRec({...todayRec,outTime:now,comment:comment||""});
+      setMsg("✅ 退勤打刻完了！");
+      setShowC(false);
+      setLoading(false);
+    });
+  }
+
+  async function saveComment(){
+    if(!id)return;
+    setLoading(true);
+    const staff=STAFF_LIST.find(s=>s.id===id);
+    const data={staffId:id,staffName:staff.name,date:today,inTime:todayRec?.inTime||"",outTime:todayRec?.outTime||"",comment};
+    await gasPost(data);
+    setMsg("💬 コメント保存しました");
+    setLoading(false);
+  }
+
+  const canIn=!todayRec?.inTime;
+  const canOut=todayRec?.inTime&&!todayRec?.outTime;
+  const done=todayRec?.inTime&&todayRec?.outTime;
+  const wmin=todayRec?calcWorkMinutes(todayRec.inTime,todayRec.outTime):null;
+
+  return(
+    <div style={S.card}>
+      <h2 style={S.cardTitle}>📱 スタッフ打刻</h2>
+      <p style={{color:C.mu,fontSize:14,marginBottom:8}}>{new Date().toLocaleDateString("ja-JP",{year:"numeric",month:"long",day:"numeric",weekday:"long"})}</p>
+      <label style={S.label}>スタッフ選択</label>
+      <select style={S.sel} value={id} onChange={e=>{setId(e.target.value);setMsg("");}}>
+        <option value="">-- 選択してください --</option>
+        {STAFF_LIST.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+      </select>
+      {id&&<>
+        {loading&&<div style={S.msgInfo}>⏳ 読み込み中...</div>}
+        <div style={S.sBox}>
+          <div style={S.sRow}><span style={{color:C.mu}}>出勤</span><span style={{color:todayRec?.inTime?C.gr:C.mu,fontWeight:700}}>{todayRec?.inTime?formatTime(todayRec.inTime):"未打刻"}</span></div>
+          <div style={S.sRow}><span style={{color:C.mu}}>退勤</span><span style={{color:todayRec?.outTime?C.gr:C.mu,fontWeight:700}}>{todayRec?.outTime?formatTime(todayRec.outTime):"未打刻"}</span></div>
+          {wmin!=null&&<div style={S.sRow}><span style={{color:C.mu}}>実働</span><span style={{color:C.gr,fontWeight:700}}>{fmtMin(wmin)}（休憩1h除く）</span></div>}
+        </div>
+        {locMsg&&<div style={locOk===false?S.msgNg:locOk?S.msgOk:S.msgInfo}>{locMsg}</div>}
+        {msg&&<div style={S.msgOk}>{msg}</div>}
+        <div style={S.btnRow}>
+          {canIn&&<button style={S.btnIn} onClick={doIn} disabled={loading}>🟢 出勤</button>}
+          {canOut&&<button style={S.btnOut} onClick={()=>setShowC(true)} disabled={loading}>🔴 退勤</button>}
+          {done&&<span style={S.badge}>本日の打刻完了 ✓</span>}
+        </div>
+        {showC&&<div style={S.cBox}>
+          <p style={{color:C.acc,fontSize:14,marginBottom:8}}>💬 コメント（任意）<br/><small>早退・休憩短縮などあれば記入</small></p>
+          <textarea style={S.ta} rows={3} value={comment} onChange={e=>setComment(e.target.value)} placeholder="例：体調不良で15時に早退"/>
+          <div style={S.btnRow}>
+            <button style={S.btnOut} onClick={doOut} disabled={loading}>退勤を確定する</button>
+            <button style={S.btnGray} onClick={()=>setShowC(false)}>キャンセル</button>
+          </div>
+        </div>}
+        {todayRec&&!showC&&<div style={{marginTop:16}}>
+          <label style={S.label}>💬 本日のコメント（後から編集可）</label>
+          <textarea style={S.ta} rows={2} value={comment} onChange={e=>setComment(e.target.value)} placeholder="早退・休憩短縮など"/>
+          <button style={S.btnSave} onClick={saveComment} disabled={loading}>コメントを保存</button>
+        </div>}
+      </>}
+    </div>
+  );
+}
+
+function AdminView({authed,setAuthed}){
+  const [pass,setPass]=React.useState("");
+  const [err,setErr]=React.useState("");
+  const [month,setMonth]=React.useState(()=>todayStr().slice(0,7));
+  const [fs,setFs]=React.useState("all");
+  const [allData,setAllData]=React.useState([]);
+  const [loading,setLoading]=React.useState(false);
+
+  function login(){pass===ADMIN_PASS?(setAuthed(true),setErr("")):setErr("パスワードが違います");}
+
+  React.useEffect(()=>{
+    if(!authed)return;
+    setLoading(true);
+    gasGet().then(r=>setAllData(r)).catch(()=>{}).finally(()=>setLoading(false));
+  },[authed]);
+
+  if(!authed)return(
+    <div style={S.card}>
+      <h2 style={S.cardTitle}>🔐 管理者ログイン</h2>
+      <label style={S.label}>パスワード</label>
+      <input type="password" style={S.inp} value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()} placeholder="管理者パスワード"/>
+      {err&&<div style={S.msgNg}>{err}</div>}
+      <button style={S.btnSave} onClick={login}>ログイン</button>
+    </div>
+  );
+
+  const [y,m]=month.split("-").map(Number);
+  const dim=new Date(y,m,0).getDate();
+  const days=Array.from({length:dim},(_,i)=>`${month}-${String(i+1).padStart(2,"0")}`);
+  const staff=fs==="all"?STAFF_LIST:STAFF_LIST.filter(s=>s.id===fs);
+  function getRec(sid,date){return allData.find(r=>String(r.staffId).trim()===sid&&String(r.date).trim()===date)||null;}
+
+  function exportCSV(){
+    const rows=[["スタッフ名","日付","曜日","出勤","退勤","実働時間(分)","実働時間","コメント"]];
+    const wdays=["日","月","火","水","木","金","土"];
+    staff.forEach(s=>{
+      days.forEach(date=>{
+        const rec=getRec(s.id,date);
+        if(!rec?.inTime)return;
+        const wmin=calcWorkMinutes(rec.inTime,rec.outTime);
+        rows.push([s.name,date,wdays[new Date(date).getDay()],rec.inTime||"",rec.outTime||"",wmin??"",fmtMin(wmin),rec.comment||""]);
+      });
+    });
+    const bom="\uFEFF";
+    const csv=bom+rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));
+    a.download=`勤怠_${month}.csv`;
+    a.click();
+  }
+
+  return(
+    <div style={S.card}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+        <h2 style={S.cardTitle}>🗂 管理者画面</h2>
+        <div style={{display:"flex",gap:8}}>
+          <button style={S.btnGray} onClick={()=>{setLoading(true);gasGet().then(r=>setAllData(r)).finally(()=>setLoading(false));}}>🔄 更新</button>
+          <button style={S.btnGray} onClick={()=>setAuthed(false)}>ログアウト</button>
+        </div>
+      </div>
+      {loading&&<div style={S.msgInfo}>⏳ データ読み込み中...</div>}
+      <div style={S.fRow}>
+        <div><label style={S.label}>表示月</label><input type="month" style={S.inp} value={month} onChange={e=>setMonth(e.target.value)}/></div>
+        <div><label style={S.label}>スタッフ</label>
+          <select style={S.sel} value={fs} onChange={e=>setFs(e.target.value)}>
+            <option value="all">全員</option>
+            {STAFF_LIST.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+        </div>
+        <div style={{alignSelf:"flex-end"}}><button style={S.btnExp} onClick={exportCSV}>📊 CSVエクスポート</button></div>
+      </div>
+      <h3 style={S.secTitle}>月次サマリー（{month}）</h3>
+      <div style={S.tw}><table style={S.tbl}>
+        <thead><tr><th style={S.th}>スタッフ名</th><th style={S.th}>出勤日数</th><th style={S.th}>合計実働</th></tr></thead>
+        <tbody>{staff.map(s=>{
+          let td=0,tw=0;
+          days.forEach(d=>{const r=getRec(s.id,d);if(r?.inTime){td++;const mn=calcWorkMinutes(r.inTime,r.outTime);if(mn)tw+=mn;}});
+          return<tr key={s.id} style={S.tr}><td style={S.td}>{s.name}</td><td style={{...S.td,textAlign:"center"}}>{td}日</td><td style={{...S.td,textAlign:"center"}}>{fmtMin(tw)}</td></tr>;
+        })}</tbody>
+      </table></div>
+      <h3 style={S.secTitle}>日別詳細</h3>
+      {staff.map(s=>(
+        <div key={s.id} style={{marginBottom:24}}>
+          <h4 style={{color:C.acc,marginBottom:6}}>{s.name}</h4>
+          <div style={S.tw}><table style={S.tbl}>
+            <thead><tr><th style={S.th}>日付</th><th style={S.th}>出勤</th><th style={S.th}>退勤</th><th style={S.th}>実働</th><th style={S.th}>コメント</th></tr></thead>
+            <tbody>{days.map(date=>{
+              const rec=getRec(s.id,date);
+              if(!rec?.inTime)return null;
+              const wmin=calcWorkMinutes(rec.inTime,rec.outTime);
+              const wd=["日","月","火","水","木","金","土"][new Date(date).getDay()];
+              const isWe=[0,6].includes(new Date(date).getDay());
+              return<tr key={date} style={isWe?S.trWe:S.tr}>
+                <td style={S.td}>{date.slice(5)}({wd})</td>
+                <td style={S.td}>{formatTime(rec.inTime)}</td>
+                <td style={S.td}>{formatTime(rec.outTime)}</td>
+                <td style={{...S.td,textAlign:"center"}}>{wmin!=null?fmtMin(wmin):"---"}</td>
+                <td style={{...S.td,maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{rec.comment||""}</td>
+              </tr>;
+            })}</tbody>
+          </table></div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const root=ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App/>);
+</script>
+</body>
+</html>

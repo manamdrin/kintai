@@ -39,7 +39,18 @@ function calcWorkMinutes(inT,outT){if(!inT||!outT||inT===""|outT==="")return nul
 function fmtMin(min){if(min==null)return"---";return`${Math.floor(min/60)}時間${String(min%60).padStart(2,"0")}分`;}
 function todayStr(){const d=new Date();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;}
 async function gasPost(data){await fetch(GAS_URL,{method:"POST",mode:"no-cors",headers:{"Content-Type":"application/json"},body:JSON.stringify(data)});}
-async function gasGet(){const res=await fetch(GAS_URL+"?t="+Date.now());return await res.json();}
+async function gasGet(){
+  try {
+    const res = await fetch(GAS_URL + "?t=" + Date.now(), {
+      method: "GET",
+      cache: "no-cache"
+    });
+    const text = await res.text();
+    return JSON.parse(text);
+  } catch(e) {
+    return [];
+  }
+}
 
 const C={bg:"#0f172a",sur:"#1e293b",bor:"#334155",acc:"#38bdf8",gr:"#4ade80",re:"#f87171",ye:"#fbbf24",tx:"#f1f5f9",mu:"#94a3b8"};
 const S={
